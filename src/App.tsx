@@ -472,7 +472,41 @@ export default function App() {
             <h1 className="text-6xl sm:text-8xl font-serif italic font-bold mb-4 text-white drop-shadow-lg">
               Victor <span className="text-yellow-400">8</span>
             </h1>
-            <p className="text-xl text-emerald-100 mb-8 opacity-80">The ultimate Crazy Eights experience</p>
+            <p className="text-xl text-emerald-100 mb-6 opacity-80">The ultimate Crazy Eights experience</p>
+            
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.2 }}
+              className="max-w-2xl bg-black/30 backdrop-blur-md rounded-2xl p-6 mb-8 text-left border border-white/10"
+            >
+              <h2 className="text-xl font-bold text-yellow-400 mb-3 flex items-center gap-2">
+                <Info size={20} /> 游戏规则
+              </h2>
+              <ul className="space-y-2 text-emerald-50 text-sm sm:text-base opacity-90">
+                <li className="flex gap-2">
+                  <span className="text-yellow-400 font-bold">•</span>
+                  <span><strong>发牌：</strong> 玩家与 AI 各发 8 张牌。</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="text-yellow-400 font-bold">•</span>
+                  <span><strong>出牌：</strong> 必须在“花色”或“点数”上与弃牌堆顶部的牌匹配。</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="text-yellow-400 font-bold">•</span>
+                  <span><strong>万能 8 点：</strong> 数字“8”是万用牌，可随时打出并指定新花色。</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="text-yellow-400 font-bold">•</span>
+                  <span><strong>摸牌：</strong> 无牌可出时必须摸一张牌；若摸牌堆为空则跳过回合。</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="text-yellow-400 font-bold">•</span>
+                  <span><strong>获胜：</strong> 最先清空手牌的一方获胜。</span>
+                </li>
+              </ul>
+            </motion.div>
+
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <button 
                 onClick={initGame}
