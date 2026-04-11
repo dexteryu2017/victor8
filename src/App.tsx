@@ -23,7 +23,12 @@ import {
   Music,
   Upload,
   Pen,
-  Check
+  Check,
+  SkipForward,
+  SkipBack,
+  ListMusic,
+  Play,
+  Pause
 } from 'lucide-react';
 import { Card, Suit, GameStatus, GameState } from './types';
 import { createDeck, isValidMove, shuffle } from './utils';
@@ -49,6 +54,7 @@ interface PlayingCardProps {
   isFaceUp?: boolean;
   onClick?: () => void;
   isPlayable?: boolean;
+  isShaking?: boolean;
   className?: string;
   key?: string; // Add key to props to satisfy TS
 }
@@ -58,13 +64,17 @@ const PlayingCard = ({
   isFaceUp = true, 
   onClick, 
   isPlayable = false,
+  isShaking = false,
   className = "" 
 }: PlayingCardProps) => {
   return (
     <motion.div
       layout
       initial={{ scale: 0.8, opacity: 0, y: 20 }}
-      animate={{ scale: 1, opacity: 1, y: 0 }}
+      animate={isShaking ? {
+        x: [0, -10, 10, -10, 10, 0],
+        transition: { duration: 0.4 }
+      } : { scale: 1, opacity: 1, y: 0 }}
       whileHover={{ y: -15, scale: 1.05 }}
       onClick={onClick}
       className={`relative w-24 h-36 sm:w-28 sm:h-40 rounded-xl border-2 bg-white card-shadow flex flex-col items-center justify-center cursor-pointer transition-colors border-slate-200 ${className}`}
@@ -110,9 +120,11 @@ export default function App() {
   const [message, setMessage] = useState("Welcome to Victor Crazy Eights!");
   const [playerName, setPlayerName] = useState("You");
   const [isEditingName, setIsEditingName] = useState(false);
+  const [shakingCardId, setShakingCardId] = useState<string | null>(null);
   const [isMusicPlaying, setIsMusicPlaying] = useState(false);
   const [volume, setVolume] = useState(0.5);
-  const [customMusicUrl, setCustomMusicUrl] = useState<string | null>(null);
+  const [playlist, setPlaylist] = useState<{ name: string, url: string }[]>([]);
+  const [currentTrackIndex, setCurrentTrackIndex] = useState(-1);
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
   const penClickAudioRef = React.useRef<HTMLAudioElement | null>(null);
   const errorAudioRef = React.useRef<HTMLAudioElement | null>(null);
@@ -125,12 +137,20 @@ export default function App() {
     }
   };
 
-  const playErrorSound = () => {
+  const playErrorSound = useCallback(() => {
+    console.log("Attempting to play error sound...");
     if (errorAudioRef.current) {
       errorAudioRef.current.currentTime = 0;
-      errorAudioRef.current.play().catch(e => console.error("Error sound failed:", e));
+      errorAudioRef.current.play().then(() => {
+        console.log("Error sound played successfully");
+      }).catch(e => {
+        console.error("Error sound failed:", e);
+        errorAudioRef.current?.play().catch(e2 => console.error("Error sound fallback failed:", e2));
+      });
+    } else {
+      console.warn("errorAudioRef.current is null");
     }
-  };
+  }, []);
 
   // Sync audio element with state
   useEffect(() => {
@@ -140,13 +160,48 @@ export default function App() {
   }, [volume]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const url = URL.createObjectURL(file);
-      setCustomMusicUrl(url);
-      setIsMusicPlaying(true);
-      setMessage(`Loaded: ${file.name}`);
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      const fileList = Array.from(files);
+      const newTracks = fileList.map((file: File) => ({
+        name: file.name,
+        url: URL.createObjectURL(file)
+      }));
+      
+      setPlaylist(prev => [...prev, ...newTracks]);
+      
+      // If no track is playing, start the first newly added track
+      if (currentTrackIndex === -1) {
+        setCurrentTrackIndex(0);
+        setIsMusicPlaying(true);
+      }
+      
+      setMessage(`Added ${newTracks.length} track(s) to playlist`);
     }
+  };
+
+  const nextTrack = () => {
+    if (playlist.length === 0) return;
+    setCurrentTrackIndex(prev => (prev + 1) % playlist.length);
+    setIsMusicPlaying(true);
+    // Force play after state update
+    setTimeout(() => {
+      if (audioRef.current) {
+        audioRef.current.play().catch(e => console.error("Auto-play next failed:", e));
+      }
+    }, 0);
+  };
+
+  const prevTrack = () => {
+    if (playlist.length === 0) return;
+    setCurrentTrackIndex(prev => (prev - 1 + playlist.length) % playlist.length);
+    setIsMusicPlaying(true);
+    // Force play after state update
+    setTimeout(() => {
+      if (audioRef.current) {
+        audioRef.current.play().catch(e => console.error("Auto-play prev failed:", e));
+      }
+    }, 0);
   };
 
   const triggerFileSelect = () => {
@@ -168,7 +223,7 @@ export default function App() {
         audioRef.current.pause();
       }
     }
-  }, [isMusicPlaying]);
+  }, [isMusicPlaying, currentTrackIndex]);
 
   const toggleMusic = () => {
     setIsMusicPlaying(prev => !prev);
@@ -245,7 +300,10 @@ export default function App() {
     if (target === 'player') {
       const topCard = gameState.discardPile[gameState.discardPile.length - 1];
       if (!isValidMove(card, topCard, gameState.activeSuit)) {
+        console.log("Invalid move detected for card:", card.id);
         playErrorSound();
+        setShakingCardId(card.id);
+        setTimeout(() => setShakingCardId(null), 500);
         return;
       }
     }
@@ -436,8 +494,13 @@ export default function App() {
     <div className="h-screen w-full flex flex-col felt-texture relative overflow-hidden">
       <audio 
         ref={audioRef}
-        src={customMusicUrl || "https://www.mfiles.co.uk/mp3-downloads/erik-satie-gymnopedie-1.mp3"}
-        loop
+        src={currentTrackIndex >= 0 ? playlist[currentTrackIndex].url : "https://www.mfiles.co.uk/mp3-downloads/erik-satie-gymnopedie-1.mp3"}
+        loop={playlist.length <= 1}
+        onEnded={() => {
+          if (playlist.length > 1) {
+            nextTrack();
+          }
+        }}
         preload="auto"
         crossOrigin="anonymous"
       />
@@ -450,7 +513,7 @@ export default function App() {
 
       <audio 
         ref={errorAudioRef}
-        src="https://www.soundjay.com/misc/sounds/doorbell-1.mp3"
+        src="https://www.soundjay.com/buttons/sounds/button-11.mp3"
         preload="auto"
       />
 
@@ -459,6 +522,7 @@ export default function App() {
         ref={fileInputRef} 
         onChange={handleFileChange} 
         accept="audio/mp3,audio/mpeg" 
+        multiple
         className="hidden" 
       />
 
@@ -526,13 +590,28 @@ export default function App() {
                   className="w-24 h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-yellow-400"
                 />
               </div>
-              <button 
-                onClick={triggerFileSelect}
-                className="px-8 py-4 bg-emerald-700/40 hover:bg-emerald-700/60 text-white font-medium rounded-full transition-all flex items-center gap-3 backdrop-blur-sm border border-emerald-500/30"
-              >
-                <Upload size={20} />
-                Load Your MP3
-              </button>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={triggerFileSelect}
+                  className="px-8 py-4 bg-emerald-700/40 hover:bg-emerald-700/60 text-white font-medium rounded-full transition-all flex items-center gap-3 backdrop-blur-sm border border-emerald-500/30"
+                >
+                  <Upload size={20} />
+                  Load MP3s
+                </button>
+                {playlist.length > 0 && (
+                  <div className="flex gap-1">
+                    <button onClick={prevTrack} className="p-4 bg-white/10 hover:bg-white/20 rounded-full text-white transition-all backdrop-blur-sm border border-white/10">
+                      <SkipBack size={20} />
+                    </button>
+                    <button onClick={toggleMusic} className="p-4 bg-white/10 hover:bg-white/20 rounded-full text-white transition-all backdrop-blur-sm border border-white/10">
+                      {isMusicPlaying ? <Pause size={20} /> : <Play size={20} />}
+                    </button>
+                    <button onClick={nextTrack} className="p-4 bg-white/10 hover:bg-white/20 rounded-full text-white transition-all backdrop-blur-sm border border-white/10">
+                      <SkipForward size={20} />
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </motion.div>
         </div>
@@ -580,6 +659,21 @@ export default function App() {
             </div>
             
             <div className="flex items-center gap-4">
+              {playlist.length > 0 && (
+                <div className="hidden lg:flex items-center gap-2 px-3 py-1 bg-white/10 rounded-full">
+                  <Music size={14} className="text-yellow-400" />
+                  <span className="text-[10px] font-mono text-white truncate max-w-[100px]">
+                    {playlist[currentTrackIndex]?.name}
+                  </span>
+                  <div className="flex gap-1 ml-1">
+                    <button onClick={prevTrack} className="hover:text-yellow-400 transition-colors"><SkipBack size={12} /></button>
+                    <button onClick={toggleMusic} className="hover:text-yellow-400 transition-colors">
+                      {isMusicPlaying ? <Pause size={12} /> : <Play size={12} />}
+                    </button>
+                    <button onClick={nextTrack} className="hover:text-yellow-400 transition-colors"><SkipForward size={12} /></button>
+                  </div>
+                </div>
+              )}
               <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-white/10 rounded-full group/volume">
                 {volume === 0 ? <VolumeX size={16} className="text-emerald-300" /> : volume < 0.5 ? <Volume1 size={16} className="text-emerald-300" /> : <Volume2 size={16} className="text-emerald-300" />}
                 <input
@@ -683,6 +777,7 @@ export default function App() {
                   <PlayingCard 
                     key={card.id} 
                     card={card} 
+                    isShaking={shakingCardId === card.id}
                     onClick={() => playCard(card, 'player')}
                   />
                 ))}
